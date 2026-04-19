@@ -5,8 +5,8 @@
 #include <ArduinoJson.h>
 
 // ─── WiFi ───────────────────────────────────────────────
-const char* ssid     = "pro";
-const char* password = "slamxuwb";
+const char* ssid     = "User_name";
+const char* password = "Password";
 
 // ─── MPU-9250 ───────────────────────────────────────────
 #define MPU_ADDR 0x68
@@ -211,8 +211,8 @@ void setup() {
   // Init Kalman with first accel reading
   float ax,ay,az,gx,gy,gz;
   readMPU(ax,ay,az,gx,gy,gz);
-  //float initAngle = atan2(ay, az) * 180.0f / PI;
-  float initAngle = atan2(ax, az) * 180.0f / PI;
+  //float initAngle = atan2(ay, az) * 180.0f / PI; // if the tilt axis is X use this else
+  float initAngle = atan2(ax, az) * 180.0f / PI; // if tilt axis is Y then use this 
   kalman.angle = initAngle;
   lastTime = micros();
 }
@@ -230,12 +230,12 @@ void loop() {
   float ax,ay,az,gx,gy,gz;
   readMPU(ax,ay,az,gx,gy,gz);
 
-  //float accelAngle = atan2(ay, az) * 180.0f / PI;
+  //float accelAngle = atan2(ay, az) * 180.0f / PI; // For Tilt axis X
   //float angle = kalman.update(accelAngle, gx, dt);
-  float accelAngle = atan2(ax, az) * 180.0f / PI;
+  float accelAngle = atan2(ax, az) * 180.0f / PI; // For Tilt axis Y
   float angle = kalman.update(accelAngle, gy, dt);
 
-  // ── Tilt cutoff — kill motors if too far ──
+  // Kill motors and stop the bot if tilt is more than 60 degrees
   if (abs(angle) > 60.0f) {
     stopMotors();
     running = false;
@@ -264,6 +264,7 @@ void loop() {
       angle, output, Kp, Ki, Kd);
     wsServer.broadcastTXT(buf);
   }
+  // This is to verify if the calculated offsets are correct by reading the imu reading after offsets 
   // float ax,ay,az,gx,gy,gz;
   // readMPU(ax,ay,az,gx,gy,gz);
   // Serial.printf("ax:%.3f ay:%.3f az:%.3f | gx:%.3f gy:%.3f gz:%.3f\n",
