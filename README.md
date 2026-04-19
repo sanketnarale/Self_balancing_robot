@@ -53,6 +53,7 @@ The robot maintains upright balance by continuously measuring its tilt angle usi
                             └─────────────┘
 ```
 
+![alt text](<WhatsApp Image 2026-04-20 at 1.43.43 AM.jpeg>)
 ---
 
 ## 🔧 Hardware
