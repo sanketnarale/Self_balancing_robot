@@ -5,8 +5,8 @@
 #include <ArduinoJson.h>
 
 // ─── WiFi ───────────────────────────────────────────────
-const char* ssid     = "User_name";
-const char* password = "Password";
+const char* ssid     = "pro";
+const char* password = "slamxuwb";
 
 // ─── MPU-9250 ───────────────────────────────────────────
 #define MPU_ADDR 0x68
@@ -236,7 +236,7 @@ void loop() {
   float angle = kalman.update(accelAngle, gy, dt);
 
   // Kill motors and stop the bot if tilt is more than 60 degrees
-  if (abs(angle) > 60.0f) {
+  if (abs(angle) > 75.0f) {
     stopMotors();
     running = false;
     return;
