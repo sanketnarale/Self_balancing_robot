@@ -1,0 +1,185 @@
+
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:var(--font-sans);background:transparent;color:var(--color-text-primary)}
+.panel{background:var(--color-background-primary);border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-lg);padding:1rem 1.25rem;margin-bottom:12px}
+.sec{font-size:11px;font-weight:500;color:var(--color-text-tertiary);text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px}
+.row{display:flex;align-items:center;gap:8px;margin-bottom:10px}
+.row:last-child{margin-bottom:0}
+.row label{font-size:13px;color:var(--color-text-secondary);width:48px;flex-shrink:0}
+.row input[type=range]{flex:1}
+.row input[type=number]{width:72px;height:32px;padding:0 8px;border:0.5px solid var(--color-border-secondary);border-radius:var(--border-radius-md);background:var(--color-background-primary);color:var(--color-text-primary);font-size:13px;font-weight:500;text-align:right;-moz-appearance:textfield}
+.row input[type=number]::-webkit-inner-spin-button{opacity:1}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.metric{background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:10px 14px}
+.metric .lbl{font-size:12px;color:var(--color-text-secondary);margin-bottom:4px}
+.metric .num{font-size:22px;font-weight:500}
+canvas{width:100%;height:130px;display:block;border-radius:var(--border-radius-md);background:var(--color-background-secondary)}
+.ip-row{display:flex;gap:8px;align-items:center;margin-bottom:10px}
+.ip-row input[type=text]{flex:1;height:36px;padding:0 10px;border:0.5px solid var(--color-border-secondary);border-radius:var(--border-radius-md);background:var(--color-background-primary);color:var(--color-text-primary);font-size:13px}
+#connect-btn{height:36px;padding:0 16px;border:0.5px solid var(--color-border-secondary);border-radius:var(--border-radius-md);background:transparent;color:var(--color-text-primary);font-size:13px;cursor:pointer}
+#connect-btn:hover{background:var(--color-background-secondary)}
+.dot{width:8px;height:8px;border-radius:50%;background:#ccc;flex-shrink:0;transition:background .3s}
+.dot.on{background:#3bb77e}.dot.err{background:#e24b4a}
+#start-btn{width:100%;height:42px;border:0.5px solid var(--color-border-secondary);border-radius:var(--border-radius-md);background:transparent;color:var(--color-text-primary);font-size:14px;font-weight:500;cursor:pointer}
+#start-btn:hover{background:var(--color-background-secondary)}
+#start-btn.active{background:#e8f9f1;color:#0f6e56;border-color:#1d9e75}
+</style>
+
+<div style="padding:1rem 0">
+
+<div class="panel">
+  <div class="sec">connection</div>
+  <div class="ip-row">
+    <div class="dot" id="dot"></div>
+    <input type="text" id="ip-in" placeholder="192.168.x.x">
+    <button id="connect-btn">Connect</button>
+  </div>
+  <div style="font-size:12px;color:var(--color-text-tertiary)" id="status-txt">Not connected</div>
+</div>
+
+<div class="panel">
+  <div class="sec">angle &amp; output</div>
+  <div class="grid2">
+    <div class="metric"><div class="lbl">Angle (deg)</div><div class="num" id="angle-num">—</div></div>
+    <div class="metric"><div class="lbl">PID output</div><div class="num" id="out-num">—</div></div>
+  </div>
+  <div style="margin-top:10px"><canvas id="cv"></canvas></div>
+</div>
+
+<div class="panel">
+  <div class="sec">PID gains</div>
+  <div class="row">
+    <label>Kp</label>
+    <input type="range" id="kp-s" min="0" max="80" step="0.25" value="25">
+    <input type="number" id="kp-n" min="0" max="80" step="0.25" value="25">
+  </div>
+  <div class="row">
+    <label>Ki</label>
+    <input type="range" id="ki-s" min="0" max="5" step="0.025" value="0.8">
+    <input type="number" id="ki-n" min="0" max="5" step="0.025" value="0.8">
+  </div>
+  <div class="row">
+    <label>Kd</label>
+    <input type="range" id="kd-s" min="0" max="5" step="0.025" value="0.6">
+    <input type="number" id="kd-n" min="0" max="5" step="0.025" value="0.6">
+  </div>
+  <div class="row">
+    <label>Setpt</label>
+    <input type="range" id="sp-s" min="-10" max="10" step="0.25" value="0">
+    <input type="number" id="sp-n" min="-10" max="10" step="0.25" value="0">
+  </div>
+</div>
+
+<div class="panel">
+  <button id="start-btn">Start</button>
+</div>
+
+</div>
+
+<script>
+let ws=null, running=false;
+const dot=document.getElementById('dot');
+const stxt=document.getElementById('status-txt');
+const angleNum=document.getElementById('angle-num');
+const outNum=document.getElementById('out-num');
+const startBtn=document.getElementById('start-btn');
+const cv=document.getElementById('cv');
+const ctx=cv.getContext('2d');
+const BUF=120;
+const angleBuf=new Array(BUF).fill(0);
+const outBuf=new Array(BUF).fill(0);
+
+function resize(){cv.width=cv.offsetWidth*devicePixelRatio;cv.height=cv.offsetHeight*devicePixelRatio}
+resize();window.addEventListener('resize',resize);
+
+function drawPlot(){
+  const W=cv.width,H=cv.height;
+  ctx.clearRect(0,0,W,H);
+  const zero=H/2;
+  ctx.strokeStyle='rgba(128,128,128,0.15)';ctx.lineWidth=1;
+  ctx.beginPath();ctx.moveTo(0,zero);ctx.lineTo(W,zero);ctx.stroke();
+  const step=W/BUF;
+  function drawLine(buf,color,scale){
+    ctx.strokeStyle=color;ctx.lineWidth=1.5*devicePixelRatio;
+    ctx.beginPath();
+    buf.forEach((v,i)=>{
+      const x=i*step,y=zero-(v/scale)*zero*0.85;
+      i===0?ctx.moveTo(x,y):ctx.lineTo(x,y);
+    });
+    ctx.stroke();
+  }
+  drawLine(angleBuf,'#1d9e75',45);
+  drawLine(outBuf,'rgba(100,100,200,0.5)',255);
+  ctx.font=`${10*devicePixelRatio}px sans-serif`;
+  ctx.fillStyle='#1d9e75';ctx.fillText('angle',6*devicePixelRatio,14*devicePixelRatio);
+  ctx.fillStyle='rgba(100,100,200,0.8)';ctx.fillText('output',6*devicePixelRatio,26*devicePixelRatio);
+}
+setInterval(drawPlot,80);
+
+function send(obj){if(ws&&ws.readyState===1)ws.send(JSON.stringify(obj));}
+
+function syncGains(){
+  send({
+    kp:parseFloat(document.getElementById('kp-n').value),
+    ki:parseFloat(document.getElementById('ki-n').value),
+    kd:parseFloat(document.getElementById('kd-n').value),
+    sp:parseFloat(document.getElementById('sp-n').value),
+  });
+}
+
+function linkPair(sid, nid){
+  const sl=document.getElementById(sid);
+  const nm=document.getElementById(nid);
+  sl.addEventListener('input',()=>{
+    nm.value=parseFloat(sl.value).toFixed(sid==='kp-s'?2:3);
+    syncGains();
+  });
+  nm.addEventListener('input',()=>{
+    const v=parseFloat(nm.value);
+    if(!isNaN(v)){sl.value=v;syncGains();}
+  });
+  nm.addEventListener('change',()=>{
+    let v=parseFloat(nm.value);
+    if(isNaN(v))v=parseFloat(sl.value);
+    v=Math.max(parseFloat(sl.min),Math.min(parseFloat(sl.max),v));
+    nm.value=v.toFixed(sid==='kp-s'?2:3);
+    sl.value=v;
+    syncGains();
+  });
+}
+
+linkPair('kp-s','kp-n');
+linkPair('ki-s','ki-n');
+linkPair('kd-s','kd-n');
+linkPair('sp-s','sp-n');
+
+startBtn.addEventListener('click',()=>{
+  running=!running;
+  startBtn.textContent=running?'Stop':'Start';
+  startBtn.classList.toggle('active',running);
+  send({running});
+});
+
+document.getElementById('connect-btn').addEventListener('click',()=>{
+  const ip=document.getElementById('ip-in').value.trim();
+  if(!ip)return;
+  if(ws)ws.close();
+  ws=new WebSocket('ws://'+ip+':81');
+  stxt.textContent='Connecting…';dot.className='dot';
+  ws.onopen=()=>{dot.className='dot on';stxt.textContent='Connected to '+ip;syncGains();send({running});};
+  ws.onclose=()=>{dot.className='dot err';stxt.textContent='Disconnected';running=false;startBtn.textContent='Start';startBtn.classList.remove('active');};
+  ws.onerror=()=>{dot.className='dot err';stxt.textContent='Connection error';};
+  ws.onmessage=(e)=>{
+    try{
+      const d=JSON.parse(e.data);
+      if(d.angle!==undefined){
+        angleBuf.push(d.angle);angleBuf.shift();
+        outBuf.push(d.output);outBuf.shift();
+        angleNum.textContent=d.angle.toFixed(2)+'°';
+        outNum.textContent=d.output.toFixed(0);
+      }
+    }catch(_){}
+  };
+});
+</script>
